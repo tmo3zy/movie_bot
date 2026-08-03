@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, String, DateTime, ForeignKey
+from sqlalchemy import BigInteger, String, DateTime, ForeignKey, Text, Float
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
@@ -22,3 +22,14 @@ class Interaction(Base):
     action: Mapped[str] = mapped_column(String(50))
     
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class Movie(Base):
+    __tablename__ = 'movies'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    overview: Mapped[str] = mapped_column(Text, nullable=True)
+    poster_path: Mapped[str] = mapped_column(String(512), nullable=True)
+    vote_average: Mapped[float] = mapped_column(Float, nullable=True)
+    popularity: Mapped[float] = mapped_column(Float, nullable=True)
+    trailer_url: Mapped[str] = mapped_column(String(512), nullable=True)
