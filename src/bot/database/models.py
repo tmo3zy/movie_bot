@@ -18,9 +18,7 @@ class Interaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey('users.telegram_id', ondelete='CASCADE'))
     movie_id: Mapped[int] = mapped_column()
-
     action: Mapped[str] = mapped_column(String(50))
-    
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class Movie(Base):

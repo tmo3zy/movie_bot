@@ -1,33 +1,160 @@
 import asyncio
-from aiogram import Bot, Dispatcher
-from database.engine import init_db
 import os
 from dotenv import load_dotenv
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
-from aiogram import types
-from database.requests import add_user
+from aiogram.types import InputMediaPhoto
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+from database.engine import init_db
+from database.requests import add_user, add_interaction, get_random_movie, get_liked_movies_page
+from database.models import Movie
+from keyboards import get_movie_keyboard, MovieAction, get_feed_menu, get_likes_menu
 
 load_dotenv()
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await add_user(
-        tg_id=message.from_user.id,
-        username=message.from_user.username
-    )
-
-    await message.answer(
-        "Привет! Я КиноКомпас. 🍿\n"
-        "Я помогу тебе найти фильм на вечер"
-    )
+class UserState(StatesGroup):
+    viewing_likes = State()
 
 @dp.startup()
 async def on_startup(dispatcher: Dispatcher):
     await init_db()
-    print("Бот готов к работе!")
+
+@dp.message(F.text == "🎲 Лента")
+@dp.message(Command("start"))
+async def cmd_start_or_feed(message: types.Message, state: FSMContext):
+    await state.clear() 
+
+    if message.text == "/start":
+        await add_user(tg_id=message.from_user.id, username=message.from_user.username)
+        await message.answer(
+            "<b>Привет! Я КиноКомпас. </b> 🍿\n\n"
+            "Я помогу тебе найти фильм на вечер. Вот, как со мной работать:\n"
+            "👎 <b>Скип</b> - не хочу смотреть\n"
+            "🍿 <b>Буду смотреть</b> - отложить фильм\n"
+            "❤️ <b>Смотрел(а), топ</b> - уже смотрел(а), понравилось\n"
+            "🔎 <b>Похожие</b> - переключиться в ленту похожих фильмов\n\n"
+            "Погнали!",
+            parse_mode="HTML",
+            reply_markup=get_feed_menu()
+        )
+    else:
+        await message.answer("Возвращаемся в ленту 🍿", reply_markup=get_feed_menu())
+
+    first_movie = await get_random_movie(message.from_user.id)
+    if first_movie:
+        await send_movie_card(message, first_movie)
+
+async def send_movie_card(message_or_callback, movie: Movie):
+    overview = movie.overview if movie.overview else "Описание отсутствует."
+    if len(overview) > 850:
+        overview = f"{overview[:850]}..."
+    
+    caption = (
+        f"🎬 <b>{movie.title}</b>\n\n"
+        f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n\n"
+        f"<i>{overview}</i>"
+    )
+    
+    keyboard = get_movie_keyboard(movie.id, movie.trailer_url)
+    poster_url = f"{TMDB_IMAGE_BASE}{movie.poster_path}" if movie.poster_path else "https://via.placeholder.com/500x750?text=No+Poster"
+
+    if isinstance(message_or_callback, types.Message):
+        await message_or_callback.answer_photo(
+            photo=poster_url,
+            caption=caption,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
+async def edit_movie_card(message: types.Message, movie: Movie, is_similar: bool = False):
+    overview = movie.overview if movie.overview else "Описание отсутствует."
+    if len(overview) > 850:
+        overview = f"{overview[:850]}..."
+
+    caption = (
+        f"🎬 <b>{movie.title}</b>\n\n"
+        f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n\n"
+        f"<i>{overview}</i>"
+    )
+    
+    keyboard = get_movie_keyboard(movie.id, movie.trailer_url, is_similar)
+    poster_url = f"{TMDB_IMAGE_BASE}{movie.poster_path}" if movie.poster_path else "https://via.placeholder.com/500x750?text=No+Poster"
+
+    await message.edit_media(
+        media=InputMediaPhoto(media=poster_url, caption=caption, parse_mode="HTML"),
+        reply_markup=keyboard
+    )
+
+@dp.callback_query(MovieAction.filter())
+async def handle_movie_action(callback: types.CallbackQuery, callback_data: MovieAction):
+    user_id = callback.from_user.id
+    action = callback_data.action
+    movie_id = callback_data.movie_id
+
+    await add_interaction(tg_id=user_id, movie_id=movie_id, action=action)
+    
+    messages = {
+        "skip": "Пропущено ⏩",
+        "like": "Добавлено в закладки 🍿",
+        "watched": "Отмечено как просмотренное 🔥",
+        "similar": "Ищем похожие фильмы... 🔎",
+        "back_to_feed": "Возвращаемся в ленту... 🔙"
+    }
+    await callback.answer(messages.get(action, "Принято!"))
+
+    if action == "similar":
+        next_movie = await get_random_movie(user_id)
+        if next_movie:
+            await edit_movie_card(callback.message, next_movie, is_similar=True)
+    elif action in ("skip", "like", "watched", "back_to_feed"):
+        next_movie = await get_random_movie(user_id)
+        if next_movie:
+            await edit_movie_card(callback.message, next_movie, is_similar=False)
+
+@dp.message(F.text == "🍿 Понравившиеся фильмы")
+async def show_likes_first_page(message: types.Message, state: FSMContext):
+    await state.set_state(UserState.viewing_likes)
+    await state.update_data(page=0)
+    await send_likes_page(message, message.from_user.id, 0)
+
+@dp.message(UserState.viewing_likes, F.text.in_(["⬅️ Назад", "Вперед ➡️"]))
+async def handle_pagination(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    page = data.get("page", 0)
+    
+    if message.text == "Вперед ➡️":
+        page += 1
+    else:
+        page -= 1
+        
+    await state.update_data(page=page)
+    await send_likes_page(message, message.from_user.id, page)
+
+async def send_likes_page(message: types.Message, user_id: int, page: int):
+    limit = 5
+    movies, total = await get_liked_movies_page(user_id, page, limit)
+    
+    if total == 0:
+        await message.answer("У вас пока нет отложенных фильмов 🍿", reply_markup=get_feed_menu())
+        return
+        
+    for movie in movies:
+        await send_movie_card(message, movie)
+        
+    total_pages = (total + limit - 1) // limit
+    has_prev = page > 0
+    has_next = page < total_pages - 1
+    
+    await message.answer(
+        f"Страница {page + 1} из {total_pages}", 
+        reply_markup=get_likes_menu(has_prev, has_next)
+    )
 
 async def main():
     await dp.start_polling(bot)
