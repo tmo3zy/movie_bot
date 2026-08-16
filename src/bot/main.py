@@ -8,9 +8,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from database.engine import init_db
-from database.requests import add_user, add_interaction, get_random_movie, get_liked_movies_page
+from database.requests import add_user, add_interaction, get_liked_movies_page 
 from database.models import Movie
-from keyboards import get_movie_keyboard, MovieAction, get_feed_menu, get_likes_menu
+from keyboards import get_movie_keyboard, MovieAction, get_feed_menu, get_likes_menu, get_start_keyboard
+from services import get_recommendation, get_similar
 
 load_dotenv()
 
@@ -25,44 +26,62 @@ class UserState(StatesGroup):
 async def on_startup(dispatcher: Dispatcher):
     await init_db()
 
-@dp.message(F.text == "🎲 Лента")
 @dp.message(Command("start"))
-async def cmd_start_or_feed(message: types.Message, state: FSMContext):
+async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear() 
+    await add_user(tg_id=message.from_user.id, username=message.from_user.username)
+    
+    # Отправляем сообщение с правилами и инлайн-кнопкой
+    await message.answer(
+        "<b>Привет! Я КиноКомпас. </b> 🍿\n\n"
+        "Я помогу тебе найти фильм на вечер. Вот, как со мной работать:\n"
+        "👎 <b>Скип</b> - не хочу смотреть\n"
+        "🍿 <b>Буду смотреть</b> - отложить фильм\n"
+        "❤️ <b>Смотрел(а), топ</b> - уже смотрел(а), понравилось\n"
+        "🔎 <b>Похожие</b> - переключиться в ленту похожих фильмов\n\n"
+        "Внимательно изучи кнопки и нажимай старт!",
+        parse_mode="HTML",
+        reply_markup=get_start_keyboard()
+    )
 
-    if message.text == "/start":
-        await add_user(tg_id=message.from_user.id, username=message.from_user.username)
-        await message.answer(
-            "<b>Привет! Я КиноКомпас. </b> 🍿\n\n"
-            "Я помогу тебе найти фильм на вечер. Вот, как со мной работать:\n"
-            "👎 <b>Скип</b> - не хочу смотреть\n"
-            "🍿 <b>Буду смотреть</b> - отложить фильм\n"
-            "❤️ <b>Смотрел(а), топ</b> - уже смотрел(а), понравилось\n"
-            "🔎 <b>Похожие</b> - переключиться в ленту похожих фильмов\n\n"
-            "Погнали!",
-            parse_mode="HTML",
-            reply_markup=get_feed_menu()
-        )
-    else:
-        await message.answer("Возвращаемся в ленту 🍿", reply_markup=get_feed_menu())
-
-    first_movie = await get_random_movie(message.from_user.id)
+@dp.callback_query(F.data == "start_search")
+async def process_start_search(callback: types.CallbackQuery):
+    await callback.message.answer("Запускаем ленту... 🧭", reply_markup=get_feed_menu())
+    
+    first_movie = await get_recommendation(callback.from_user.id)
     if first_movie:
-        await send_movie_card(message, first_movie)
+        await send_movie_card(callback.message, first_movie)
+        
+    await callback.answer()
+
+@dp.message(F.text == "🎲 Лента")
+async def cmd_feed(message: types.Message, state: FSMContext):
+    await state.clear() 
+    await message.answer("Возвращаемся в ленту 🍿", reply_markup=get_feed_menu())
+    
+    next_movie = await get_recommendation(message.from_user.id)
+    if next_movie:
+        await send_movie_card(message, next_movie)
 
 async def send_movie_card(message_or_callback, movie: Movie):
     overview = movie.overview if movie.overview else "Описание отсутствует."
+    genres_text = movie.genres if movie.genres else "Не указаны"
     if len(overview) > 850:
         overview = f"{overview[:850]}..."
     
     caption = (
         f"🎬 <b>{movie.title}</b>\n\n"
         f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n\n"
+        f"🎭 Жанры: {genres_text}\n\n"
         f"<i>{overview}</i>"
     )
     
     keyboard = get_movie_keyboard(movie.id, movie.trailer_url)
-    poster_url = f"{TMDB_IMAGE_BASE}{movie.poster_path}" if movie.poster_path else "https://via.placeholder.com/500x750?text=No+Poster"
+    
+    if movie.poster_path and str(movie.poster_path).lower() != "none":
+        poster_url = f"{TMDB_IMAGE_BASE}{movie.poster_path}"
+    else:
+        poster_url = "https://placehold.co/500x750/222222/FFFFFF/png?text=No+Poster"
 
     if isinstance(message_or_callback, types.Message):
         await message_or_callback.answer_photo(
@@ -72,48 +91,68 @@ async def send_movie_card(message_or_callback, movie: Movie):
             parse_mode="HTML"
         )
 
+
 async def edit_movie_card(message: types.Message, movie: Movie, is_similar: bool = False):
     overview = movie.overview if movie.overview else "Описание отсутствует."
+    genres_text = movie.genres if movie.genres else "Не указаны"
     if len(overview) > 850:
         overview = f"{overview[:850]}..."
 
     caption = (
         f"🎬 <b>{movie.title}</b>\n\n"
         f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n\n"
+        f"🎭 Жанры: {genres_text}\n\n"
         f"<i>{overview}</i>"
     )
     
     keyboard = get_movie_keyboard(movie.id, movie.trailer_url, is_similar)
-    poster_url = f"{TMDB_IMAGE_BASE}{movie.poster_path}" if movie.poster_path else "https://via.placeholder.com/500x750?text=No+Poster"
+    
+    if movie.poster_path and str(movie.poster_path).lower() != "none":
+        poster_url = f"{TMDB_IMAGE_BASE}{movie.poster_path}"
+    else:
+        poster_url = "https://placehold.co/500x750/222222/FFFFFF/png?text=No+Poster"
 
-    await message.edit_media(
-        media=InputMediaPhoto(media=poster_url, caption=caption, parse_mode="HTML"),
-        reply_markup=keyboard
-    )
+    try:
+        await message.edit_media(
+            media=InputMediaPhoto(media=poster_url, caption=caption, parse_mode="HTML"),
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        print(f"[ERROR] Не удалось обновить медиа: {e}")
 
 @dp.callback_query(MovieAction.filter())
 async def handle_movie_action(callback: types.CallbackQuery, callback_data: MovieAction):
     user_id = callback.from_user.id
     action = callback_data.action
     movie_id = callback_data.movie_id
+    is_similar = callback_data.is_similar
 
     await add_interaction(tg_id=user_id, movie_id=movie_id, action=action)
     
-    messages = {
-        "skip": "Пропущено ⏩",
-        "like": "Добавлено в закладки 🍿",
-        "watched": "Отмечено как просмотренное 🔥",
-        "similar": "Ищем похожие фильмы... 🔎",
-        "back_to_feed": "Возвращаемся в ленту... 🔙"
-    }
-    await callback.answer(messages.get(action, "Принято!"))
+    try:
+        messages = {
+            "skip": "Пропущено ⏩",
+            "like": "Добавлено в закладки 🍿",
+            "watched": "Отмечено как просмотренное 🔥",
+            "similar": "Ищем похожие фильмы... 🔎",
+            "back_to_feed": "Возвращаемся в ленту... 🔙"
+        }
+        await callback.answer(messages.get(action, "Принято!"))
+    except Exception as e:
+        print(f"[WARNING] Не удалось ответить на callback (возможно, устарел): {e}")
 
-    if action == "similar":
-        next_movie = await get_random_movie(user_id)
+    if action == "similar" or (action in ("skip", "like", "watched") and is_similar):
+        next_movie = await get_similar(user_id, movie_id)
+        
         if next_movie:
             await edit_movie_card(callback.message, next_movie, is_similar=True)
+        else:
+            next_movie = await get_recommendation(user_id)
+            if next_movie:
+                await edit_movie_card(callback.message, next_movie, is_similar=False)
+
     elif action in ("skip", "like", "watched", "back_to_feed"):
-        next_movie = await get_random_movie(user_id)
+        next_movie = await get_recommendation(user_id)
         if next_movie:
             await edit_movie_card(callback.message, next_movie, is_similar=False)
 

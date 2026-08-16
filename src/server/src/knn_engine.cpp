@@ -2,7 +2,7 @@
 #include "basefile.hpp"
 #include <iostream>
 
-KNN::KNN(const Matrix* mat, int neighbors) : matrix(mat), k_neighbors(neighbors) {
+KNN::KNN(const Matrix* mat, int neighbors) : k_neighbors(neighbors), matrix(mat) {
     index_to_id = nullptr;
 }
 
@@ -98,7 +98,7 @@ Neighbor* KNN::get_recommendations_by_vector(const float* user_profile_vector) c
         sift_down(heap, k_neighbors, i);
     }
 
-    for (uint32_t i = k_neighbors; i < matrix->get_width(); ++i) {
+    for (int i = k_neighbors; i < matrix->get_width(); ++i) {
         float sim = dot_product(user_profile_vector, matrix->get_row(i), matrix->get_height());
 
         if (sim > heap[0].sim)

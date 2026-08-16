@@ -30,5 +30,6 @@ class Movie(Base):
     poster_path: Mapped[str] = mapped_column(String(512), nullable=True)
     vote_average: Mapped[float] = mapped_column(Float, nullable=True)
     popularity: Mapped[float] = mapped_column(Float, nullable=True)
+    genres: Mapped[str | None] = mapped_column(String, nullable=True)
     trailer_url: Mapped[str] = mapped_column(String(512), nullable=True)
     is_starter: Mapped[bool] = mapped_column(default=False)

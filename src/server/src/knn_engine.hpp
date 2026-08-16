@@ -22,6 +22,7 @@ private:
 
 public:
     KNN(const Matrix* mat, int neighbors = 20);
+    ~KNN();
 
     bool load_mapping(const char* filename);
 

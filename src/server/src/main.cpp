@@ -11,14 +11,14 @@ int main()
     std::cout << "[INFO] Инициализация сервера..." << std::endl;
 
     Matrix movie_matrix(1);
-    if (!movie_matrix.load_from_file("../data/movie_embeddings.bin")) {
+    if (!movie_matrix.load_from_file("/app/data/movie_embeddings.bin")) {
         std::cerr << "[ERROR] Ошибка загрузки матрицы векторов!" << std::endl;
         return 1;
     }
     std::cout << "[INFO] Матрица успешно загружена." << std::endl;
 
     KNN knn_engine(&movie_matrix, 20);
-    if (!knn_engine.load_mapping("../data/movie_ids.bin")) {
+    if (!knn_engine.load_mapping("/app/data/movie_ids.bin")) {
         std::cerr << "[ERROR] Ошибка загрузки словаря ID!" << std::endl;
         return 1;
     }

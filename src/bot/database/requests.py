@@ -21,10 +21,16 @@ async def add_interaction(tg_id: int, movie_id: int, action: str):
 async def get_user_history(tg_id: int):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Interaction.movie_id).where(Interaction.user_id == tg_id)
+            select(Interaction)
+            .where(Interaction.user_id == tg_id)
+            .order_by(Interaction.timestamp.desc())
         )
-        return set(result.scalars().all())
-
+        interactions = result.scalars().all()
+        
+        seen_movie_ids = {inter.movie_id for inter in interactions}
+        
+        return interactions, seen_movie_ids
+    
 async def get_random_movie(user_id: int) -> Movie | None:
     async with AsyncSessionLocal() as session:
         seen_query = select(Interaction.movie_id).where(Interaction.user_id == user_id)

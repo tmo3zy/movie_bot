@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: kinocompass_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-kinocompass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  knn_server:
+    build: 
+      context: ./src/server
+    container_name: kinocompass_knn
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+
+  bot:
+    build:
+      context: ./src/bot
+    container_name: kinocompass_bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - db
+      - knn_server
+
+volumes:
+  postgres_data:
