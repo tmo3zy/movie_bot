@@ -27,15 +27,27 @@ async def get_user_history(tg_id: int):
 
 async def get_random_movie(user_id: int) -> Movie | None:
     async with AsyncSessionLocal() as session:
-        seen_movies_subq = select(Interaction.movie_id).where(Interaction.user_id == user_id)
+        seen_query = select(Interaction.movie_id).where(Interaction.user_id == user_id)
+        seen_result = await session.execute(seen_query)
+        seen_movies = [row[0] for row in seen_result.all()]
+
+        stmt_starter = select(Movie).where(
+            Movie.is_starter == True,
+            Movie.id.notin_(seen_movies)
+        ).order_by(func.random()).limit(1)
         
-        result = await session.execute(
-            select(Movie)
-            .where(Movie.id.notin_(seen_movies_subq))
-            .order_by(func.random())
-            .limit(1)
-        )
-        return result.scalar_one_or_none()
+        result_starter = await session.execute(stmt_starter)
+        starter_movie = result_starter.scalar_one_or_none()
+        
+        if starter_movie:
+            return starter_movie
+
+        stmt_random = select(Movie).where(
+            Movie.id.notin_(seen_movies)
+        ).order_by(func.random()).limit(1)
+        
+        result_random = await session.execute(stmt_random)
+        return result_random.scalar_one_or_none()
 
 async def get_movie_by_id(movie_id: int) -> Movie | None:
     async with AsyncSessionLocal() as session:

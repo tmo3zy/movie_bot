@@ -31,3 +31,4 @@ class Movie(Base):
     vote_average: Mapped[float] = mapped_column(Float, nullable=True)
     popularity: Mapped[float] = mapped_column(Float, nullable=True)
     trailer_url: Mapped[str] = mapped_column(String(512), nullable=True)
+    is_starter: Mapped[bool] = mapped_column(default=False)

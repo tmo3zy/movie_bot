@@ -12,6 +12,11 @@ from database.models import Movie
 
 project_root = os.path.dirname(os.path.dirname(bot_dir))
 CSV_FILE_PATH = os.path.join(project_root, "data", "tmdb_movies_ru.csv")
+STARTER_IDS = [
+    438631, 155, 713704, 1327862, 1007757, 
+    1495, 616037, 329505, 79, 1595852, 
+    1361774, 663, 1084187, 950396, 265177
+]
 
 async def load_movies():
     await init_db()
@@ -29,7 +34,8 @@ async def load_movies():
                 poster_path=str(row['poster_path']) if row['poster_path'] else None,
                 vote_average=float(row['vote_average']) if row['vote_average'] is not None else None,
                 popularity=float(row['popularity']) if row['popularity'] is not None else None,
-                trailer_url=str(row['trailer_url']) if row['trailer_url'] else None
+                trailer_url=str(row['trailer_url']) if row['trailer_url'] else None,
+                is_starter=(row['id'] in STARTER_IDS)
             )
             movies_to_add.append(movie)
 
