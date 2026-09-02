@@ -12,37 +12,31 @@ def get_start_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="Понятно, погнали! 🚀", callback_data="start_search")
     return builder.as_markup()
 
-def get_movie_keyboard(movie_id: int, trailer_url: str | None = None, is_similar: bool = False) -> InlineKeyboardMarkup:
+def get_movie_keyboard(movie_id: int, trailer_url: str | None = None, is_similar: bool = False, is_liked_list: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    builder.button(
-        text="👎 Скип", 
-        callback_data=MovieAction(action="skip", movie_id=movie_id, is_similar=is_similar)
-    )
-    builder.button(
-        text="🍿 Буду смотреть", 
-        callback_data=MovieAction(action="like", movie_id=movie_id, is_similar=is_similar)
-    )
-    builder.button(
-        text="❤️ Смотрел(а), топ", 
-        callback_data=MovieAction(action="watched", movie_id=movie_id, is_similar=is_similar)
-    )
-
-    if is_similar:
-        builder.button(
-            text="🔙 В ленту", 
-            callback_data=MovieAction(action="back_to_feed", movie_id=movie_id, is_similar=False)
-        )
-    else:
+    if is_liked_list:
         builder.button(
             text="🔎 Похожие", 
             callback_data=MovieAction(action="similar", movie_id=movie_id, is_similar=True)
         )
+    else:
+        builder.button(text="👎 Скип", callback_data=MovieAction(action="skip", movie_id=movie_id, is_similar=is_similar))
+        builder.button(text="🍿 Буду смотреть", callback_data=MovieAction(action="like", movie_id=movie_id, is_similar=is_similar))
+        builder.button(text="❤️ Смотрел(а), топ", callback_data=MovieAction(action="watched", movie_id=movie_id, is_similar=is_similar))
+
+        if is_similar:
+            builder.button(text="🔙 В ленту", callback_data=MovieAction(action="back_to_feed", movie_id=movie_id, is_similar=False))
+        else:
+            builder.button(text="🔎 Похожие", callback_data=MovieAction(action="similar", movie_id=movie_id, is_similar=True))
     
     if trailer_url:
         builder.button(text="🎬 Трейлер", url=trailer_url)
         
-    builder.adjust(3, 2)
+    if is_liked_list:
+        builder.adjust(1)
+    else:
+        builder.adjust(3, 2)
     
     return builder.as_markup()
 

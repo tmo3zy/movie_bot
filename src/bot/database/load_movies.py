@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import asyncio
 import ast
+from sqlalchemy.dialects.postgresql import insert
 
 def parse_genres_to_string(raw_genres) -> str | None:
     if pd.isna(raw_genres) or not raw_genres:
@@ -23,7 +24,7 @@ from database.engine import AsyncSessionLocal, init_db
 from database.models import Movie
 
 project_root = os.path.dirname(os.path.dirname(bot_dir))
-CSV_FILE_PATH = os.path.join(project_root, "data", "tmdb_movies_ru.csv")
+CSV_FILE_PATH = os.path.join(project_root, "data", "tmdb_movies_ru_2.csv")
 STARTER_IDS = {
     1477565, 348893, 1235877, 1261825, 1368314, 
     255709, 14160, 337404, 537915, 1284016, 
@@ -37,9 +38,8 @@ async def load_movies():
     df = df.where(pd.notnull(df), None)
 
     async with AsyncSessionLocal() as session:
-        movies_to_add = []
         for _, row in df.iterrows():
-            movie = Movie(
+            stmt = insert(Movie).values(
                 id=int(row['id']),
                 title=str(row['title']),
                 overview=str(row['overview']) if pd.notna(row['overview']) else None,
@@ -48,11 +48,28 @@ async def load_movies():
                 popularity=float(row['popularity']) if pd.notna(row['popularity']) else None,
                 genres=parse_genres_to_string(row['genres']),
                 trailer_url=str(row['trailer_url']) if pd.notna(row['trailer_url']) else None,
+                release_year=int(row['release_year']) if pd.notna(row['release_year']) else None,
+                country=str(row['country']) if pd.notna(row['country']) else None,
                 is_starter=(int(row['id']) in STARTER_IDS)
             )
-            movies_to_add.append(movie)
 
-        session.add_all(movies_to_add)
+            update_stmt = stmt.on_conflict_do_update(
+                index_elements=['id'],
+                set_=dict(
+                    title=stmt.excluded.title,
+                    overview=stmt.excluded.overview,
+                    poster_path=stmt.excluded.poster_path,
+                    vote_average=stmt.excluded.vote_average,
+                    popularity=stmt.excluded.popularity,
+                    genres=stmt.excluded.genres,
+                    trailer_url=stmt.excluded.trailer_url,
+                    release_year=stmt.excluded.release_year,
+                    country=stmt.excluded.country,
+                    is_starter=stmt.excluded.is_starter
+                )
+            )
+            await session.execute(update_stmt)
+            
         await session.commit()
 
     print("Все фильмы успешно занесены в базу данных")

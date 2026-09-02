@@ -17,8 +17,6 @@ private:
 
     void sift_down(Neighbor* heap, int size, int index) const;
     float dot_product(const float* vecA, const float* vecB, int dim) const;
-    
-    Neighbor* top_k(const Matrix& matrix, int user_id) const; 
 
 public:
     KNN(const Matrix* mat, int neighbors = 20);

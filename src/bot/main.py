@@ -15,6 +15,18 @@ from services import get_recommendation, get_similar
 
 load_dotenv()
 
+COUNTRY_CODES_RU = {
+    'US': 'США', 'GB': 'Великобритания', 'FR': 'Франция', 'RU': 'Россия',
+    'SU': 'СССР', 'DE': 'Германия', 'IT': 'Италия', 'JP': 'Япония',
+    'KR': 'Южная Корея', 'CN': 'Китай', 'ES': 'Испания', 'CA': 'Канада',
+    'AU': 'Австралия', 'IN': 'Индия'
+}
+
+def get_country_name(iso_code: str) -> str:
+    if not iso_code:
+        return "Неизвестно"
+    return COUNTRY_CODES_RU.get(iso_code, iso_code)
+
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
@@ -31,7 +43,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear() 
     await add_user(tg_id=message.from_user.id, username=message.from_user.username)
     
-    # Отправляем сообщение с правилами и инлайн-кнопкой
     await message.answer(
         "<b>Привет! Я КиноКомпас. </b> 🍿\n\n"
         "Я помогу тебе найти фильм на вечер. Вот, как со мной работать:\n"
@@ -63,20 +74,23 @@ async def cmd_feed(message: types.Message, state: FSMContext):
     if next_movie:
         await send_movie_card(message, next_movie)
 
-async def send_movie_card(message_or_callback, movie: Movie):
+async def send_movie_card(message_or_callback, movie: Movie, is_liked_list: bool = False, is_similar: bool = False):
     overview = movie.overview if movie.overview else "Описание отсутствует."
     genres_text = movie.genres if movie.genres else "Не указаны"
     if len(overview) > 850:
         overview = f"{overview[:850]}..."
-    
+    country_name = get_country_name(movie.country)
+    year_text = movie.release_year if movie.release_year else "Не указан"
+
     caption = (
-        f"🎬 <b>{movie.title}</b>\n\n"
-        f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n\n"
+        f"🎬 <b>{movie.title}</b> ({year_text})\n\n"
+        f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n"
+        f"🌍 Страна: {country_name}\n"
         f"🎭 Жанры: {genres_text}\n\n"
         f"<i>{overview}</i>"
     )
     
-    keyboard = get_movie_keyboard(movie.id, movie.trailer_url)
+    keyboard = get_movie_keyboard(movie.id, movie.trailer_url, is_similar=is_similar, is_liked_list=is_liked_list)
     
     if movie.poster_path and str(movie.poster_path).lower() != "none":
         poster_url = f"{TMDB_IMAGE_BASE}{movie.poster_path}"
@@ -91,16 +105,19 @@ async def send_movie_card(message_or_callback, movie: Movie):
             parse_mode="HTML"
         )
 
-
 async def edit_movie_card(message: types.Message, movie: Movie, is_similar: bool = False):
     overview = movie.overview if movie.overview else "Описание отсутствует."
     genres_text = movie.genres if movie.genres else "Не указаны"
     if len(overview) > 850:
         overview = f"{overview[:850]}..."
 
+    country_name = get_country_name(movie.country)
+    year_text = movie.release_year if movie.release_year else "Не указан"
+
     caption = (
-        f"🎬 <b>{movie.title}</b>\n\n"
-        f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n\n"
+        f"🎬 <b>{movie.title}</b> ({year_text})\n\n"
+        f"⭐ Рейтинг: {movie.vote_average or 'Нет'}\n"
+        f"🌍 Страна: {country_name}\n"
         f"🎭 Жанры: {genres_text}\n\n"
         f"<i>{overview}</i>"
     )
@@ -121,7 +138,7 @@ async def edit_movie_card(message: types.Message, movie: Movie, is_similar: bool
         print(f"[ERROR] Не удалось обновить медиа: {e}")
 
 @dp.callback_query(MovieAction.filter())
-async def handle_movie_action(callback: types.CallbackQuery, callback_data: MovieAction):
+async def handle_movie_action(callback: types.CallbackQuery, callback_data: MovieAction, state: FSMContext):
     user_id = callback.from_user.id
     action = callback_data.action
     movie_id = callback_data.movie_id
@@ -139,22 +156,31 @@ async def handle_movie_action(callback: types.CallbackQuery, callback_data: Movi
         }
         await callback.answer(messages.get(action, "Принято!"))
     except Exception as e:
-        print(f"[WARNING] Не удалось ответить на callback (возможно, устарел): {e}")
+        print(f"[WARNING] Не удалось ответить на callback: {e}")
+
+    current_state = await state.get_state()
 
     if action == "similar" or (action in ("skip", "like", "watched") and is_similar):
         next_movie = await get_similar(user_id, movie_id)
+        is_next_similar = True
         
-        if next_movie:
-            await edit_movie_card(callback.message, next_movie, is_similar=True)
-        else:
+        if not next_movie:
             next_movie = await get_recommendation(user_id)
-            if next_movie:
-                await edit_movie_card(callback.message, next_movie, is_similar=False)
-
-    elif action in ("skip", "like", "watched", "back_to_feed"):
+            is_next_similar = False
+    else:
         next_movie = await get_recommendation(user_id)
-        if next_movie:
-            await edit_movie_card(callback.message, next_movie, is_similar=False)
+        is_next_similar = False
+
+    if next_movie:
+        if current_state == UserState.viewing_likes.state:
+            await state.clear()
+            
+            transition_text = "Переходим в ленту похожих 🔎" if is_next_similar else "Возвращаемся в ленту 🍿"
+            await callback.message.answer(transition_text, reply_markup=get_feed_menu())
+            
+            await send_movie_card(callback.message, next_movie, is_similar=is_next_similar)
+        else:
+            await edit_movie_card(callback.message, next_movie, is_similar=is_next_similar)
 
 @dp.message(F.text == "🍿 Понравившиеся фильмы")
 async def show_likes_first_page(message: types.Message, state: FSMContext):
@@ -184,7 +210,7 @@ async def send_likes_page(message: types.Message, user_id: int, page: int):
         return
         
     for movie in movies:
-        await send_movie_card(message, movie)
+        await send_movie_card(message, movie, is_liked_list=True)
         
     total_pages = (total + limit - 1) // limit
     has_prev = page > 0

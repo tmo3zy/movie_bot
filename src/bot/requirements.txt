@@ -4,3 +4,5 @@ asyncpg
 aiohttp
 numpy
 python-dotenv
+catboost
+pandas

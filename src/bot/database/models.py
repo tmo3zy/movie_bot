@@ -32,4 +32,6 @@ class Movie(Base):
     popularity: Mapped[float] = mapped_column(Float, nullable=True)
     genres: Mapped[str | None] = mapped_column(String, nullable=True)
     trailer_url: Mapped[str] = mapped_column(String(512), nullable=True)
+    release_year: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    country: Mapped[str] = mapped_column(String, nullable=True)
     is_starter: Mapped[bool] = mapped_column(default=False)
