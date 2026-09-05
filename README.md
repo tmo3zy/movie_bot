@@ -8,7 +8,7 @@
 Telegram-бот с ML-движком для персональных рекомендаций фильмов, построенный на базе архитектуры **Two-Stage RecSys (Retrieval + Ranking)**.
 
 
-![KinoCompass Demo](data/kinocompass.gif)
+![KinoCompass Demo](assets/kinocompass.gif)
 
 ## Архитектура системы
 * **Stage 1 (Retrieval):** Высокоскоростной микросервис на C++ для поиска ближайших соседей (kNN). Использует эмбеддинги, сгенерированные из названий, описаний и жанров фильмов (`Hugging Face multilingual-e5-small`), для точного семантического отбора кандидатов.
